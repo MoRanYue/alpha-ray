@@ -5,6 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio_util::codec::Decoder;
 use uuid::Uuid;
 use bytes::{Buf, BufMut, BytesMut};
+use crate::util::AsyncStreamExt;
 use crate::{AsyncStream, TargetAddr};
 use crate::error::VlessError;
 
@@ -234,9 +235,7 @@ impl VlessProtocol {
     pub async fn accept(stream: &mut impl AsyncStream) -> Result<VlessRequest> {
         // version(1) + uuid(16) + addons_len(1) + command(1) + port(2) + addr_kind(1) = 22
         let mut header_buf = BytesMut::with_capacity(22);
-        while header_buf.len() < 22 {
-            stream.read_buf(&mut header_buf).await?;
-        }
+        stream.read_buf_exact(&mut header_buf, 22).await?;
         let mut header = header_buf.freeze();
 
         let version = VlessVersion::try_from(header.get_u8())?;
@@ -248,9 +247,7 @@ impl VlessProtocol {
         if addons_len != 0 {
             // skip addons
             let mut addons = BytesMut::with_capacity(addons_len as usize);
-            while addons.len() < addons_len as usize {
-                stream.read_buf(&mut addons).await?;
-            }
+            stream.read_buf_exact(&mut addons, addons_len as usize).await?;
         }
 
         let command = header.get_u8();
@@ -262,34 +259,26 @@ impl VlessProtocol {
         let target = match addr_kind {
             1 => { // IPv4
                 let mut ip = BytesMut::with_capacity(4);
-                while ip.len() < 4 {
-                    stream.read_buf(&mut ip).await?;
-                }
+                stream.read_buf_exact(&mut ip, 4).await?;
                 let ip = ip.freeze();
 
                 TargetAddr::SocketAddr(SocketAddr::new(IpAddr::V4(Ipv4Addr::from_octets(ip.as_ref().try_into().unwrap())), port))
             },
             2 => { // Domain
                 let mut domain_len = BytesMut::with_capacity(1);
-                while domain_len.len() < 1 {
-                    stream.read_buf(&mut domain_len).await?;
-                }
+                stream.read_buf_exact(&mut domain_len, 1).await?;
                 let domain_len = domain_len.freeze().get_u8();
 
                 let mut domain = BytesMut::with_capacity(domain_len as usize);
-                while domain.len() < domain_len as usize {
-                    stream.read_buf(&mut domain).await?;
-                }
+                stream.read_buf_exact(&mut domain, domain_len as usize).await?;
                 let domain = String::from_utf8_lossy(&domain).to_string();
 
                 TargetAddr::Domain(domain, port)
             },
             3 => { // IPv6
-                let mut ip_buf = BytesMut::with_capacity(16);
-                while ip_buf.len() < 16 {
-                    stream.read_buf(&mut ip_buf).await?;
-                }
-                let ip = ip_buf.freeze();
+                let mut ip = BytesMut::with_capacity(16);
+                stream.read_buf_exact(&mut ip, 16).await?;
+                let ip = ip.freeze();
 
                 TargetAddr::SocketAddr(SocketAddr::new(IpAddr::V6(Ipv6Addr::from_octets(ip.as_ref().try_into().unwrap())), port))
             },

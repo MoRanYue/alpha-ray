@@ -8,7 +8,8 @@ use rustls::Connection;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use uuid::Uuid;
 use crate::AsyncStream;
-use crate::protocol::tls::SyncAdapter;
+
+pub struct SyncAdapter<'a, 'b, S> { pub io: &'a mut S, pub cx: &'a mut Context<'b> } impl<'a, 'b, S: AsyncStream> Read for SyncAdapter<'a, 'b, S> { fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { let mut read_buf = ReadBuf::new(buf); match Pin::new(&mut *self.io).poll_read(self.cx, &mut read_buf) { Poll::Ready(Ok(_)) => Ok(read_buf.filled().len()), Poll::Ready(Err(e)) => Err(e), Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()), } } } impl<'a, 'b, S: AsyncStream> Write for SyncAdapter<'a, 'b, S> { fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { match Pin::new(&mut *self.io).poll_write(self.cx, buf) { Poll::Ready(Ok(0)) if !buf.is_empty() => Err(std::io::ErrorKind::WriteZero.into()), Poll::Ready(r) => r, Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()), } } fn flush(&mut self) -> std::io::Result<()> { match Pin::new(&mut *self.io).poll_flush(self.cx) { Poll::Ready(r) => r, Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()), } } }
 
 #[derive(Debug)]
 pub enum VisionCommand {

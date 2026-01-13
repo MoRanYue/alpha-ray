@@ -1,8 +1,4 @@
 use std::sync::Arc;
-use crate::dispatcher::Dispatcher;
-use crate::inbound::Inbound;
-use crate::security::none::NoneSecurity;
-use crate::network::none::NoneNetwork;
 use crate::{AsyncStream, TargetAddr, security};
 use crate::transport::{StreamInboundTransport, StreamOutboundTransport};
 use crate::security::{StreamInboundSecurity, StreamOutboundSecurity};
@@ -39,7 +35,7 @@ impl StreamInboundPipeline {
         let mut stream = self.transport.accept().await?;
         stream = self.security.accept(stream).await?;
         stream = self.network.accept(stream).await?;
-        
+
         Ok(stream)
     }
 

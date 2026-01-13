@@ -1,4 +1,3 @@
-pub mod tcp;
 pub mod socks;
 pub mod http;
 pub mod vless;

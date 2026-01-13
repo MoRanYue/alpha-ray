@@ -43,7 +43,7 @@ impl VisionTlsOutboundSecurity {
         let mut root_store = RootCertStore::from_iter(
             webpki_roots::TLS_SERVER_ROOTS.iter().cloned()
         );
-        root_store.add(CertificateDer::from_pem_file("D:/RUST/alpha-ray/certs/root.crt").unwrap());
+        root_store.add(CertificateDer::from_pem_file("D:/RUST/alpha-ray/certs/root.crt").unwrap()).unwrap();
         let config = Arc::new(
             rustls::ClientConfig::builder()
                 .with_root_certificates(root_store)

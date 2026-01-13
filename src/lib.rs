@@ -12,7 +12,7 @@ pub mod util;
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, DnsName, PrivateKeyDer, ServerName};
-use tracing_subscriber::{fmt, util::SubscriberInitExt};
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use std::sync::Arc;
@@ -21,18 +21,18 @@ use error::AlphaRayError;
 use dispatcher::simple::SimpleDispatcher;
 use inbound::Inbound;
 use inbound::vless::VlessInbound;
-use outbound::socks::Socks5Outbound;
 use outbound::vless::VlessOutbound;
-use crate::inbound::socks::Socks5Inbound;
-use crate::network::none::NoneNetwork;
-use crate::outbound::Outbound;
-use crate::outbound::tcp::TcpOutbound;
-use crate::pipeline::{StreamInboundPipeline, StreamOutboundPipeline};
-use crate::security::none::NoneSecurity;
-use crate::security::vision_tls::{VisionTlsInboundSecurity, VisionTlsOutboundSecurity};
-use crate::transport::tcp::{TcpInboundTransport, TcpOutboundTransport};
+use inbound::socks::Socks5Inbound;
+use network::none::NoneNetwork;
+use security::vision_tls::{VisionTlsInboundSecurity, VisionTlsOutboundSecurity};
+use security::none::NoneSecurity;
+use pipeline::{StreamInboundPipeline, StreamOutboundPipeline};
+use transport::tcp::{TcpInboundTransport, TcpOutboundTransport};
 
 pub use util::{Result, AsyncStream, TargetAddr};
+
+use crate::outbound::socks::Socks5Outbound;
+use crate::security::tls::TlsInboundSecurity;
 
 pub async fn run() -> Result<()> {
     setup_logger();
@@ -40,7 +40,12 @@ pub async fn run() -> Result<()> {
 
     let mut handles = Vec::with_capacity(2);
 
-    let outbound = Arc::new(TcpOutbound::new());
+    // let outbound = Arc::new(StreamOutboundPipeline::new(
+    //     Arc::new(TcpOutboundTransport::new()),
+    //     Arc::new(NoneSecurity),
+    //     Arc::new(NoneNetwork)
+    // ));
+    let outbound = Arc::new(Socks5Outbound::new("127.0.0.1:10808".parse().unwrap()));
     
     let dispatcher = Arc::new(SimpleDispatcher::new(outbound));
 
@@ -55,14 +60,15 @@ pub async fn run() -> Result<()> {
             PrivateKeyDer::from_pem_file("D:/RUST/alpha-ray/certs/cert.key")?
         )?;
 
-    let pipeline = StreamInboundPipeline::new(
+    let pipeline = Arc::new(StreamInboundPipeline::new(
         Arc::new(TcpInboundTransport::bind("127.0.0.1:1082".parse().unwrap()).await?),
-        Arc::new(VisionTlsInboundSecurity::new_with_default_padding(Arc::new(config), vec![id])),
+        // Arc::new(VisionTlsInboundSecurity::new_with_default_padding(Arc::new(config), vec![id])),
+        Arc::new(TlsInboundSecurity::new(Arc::new(config))),
         Arc::new(NoneNetwork)
-    );
+    ));
 
     let inbound = VlessInbound::bind(
-        Arc::new(pipeline),
+        pipeline,
         id
     ).await?;
     tracing::info!("`{}` is listening on `127.0.0.1:1082`", inbound.name());
@@ -73,31 +79,31 @@ pub async fn run() -> Result<()> {
         }
     }));
 
-    let pipeline = StreamOutboundPipeline::new(
-        Arc::new(TcpOutboundTransport::new()),
-        Arc::new(VisionTlsOutboundSecurity::new_with_mozilla_and_default_padding(
-            "local.caughtwind.top".try_into().unwrap(),
-            id
-        )),
-        Arc::new(NoneNetwork)
-    );
+    // let pipeline = StreamOutboundPipeline::new(
+    //     Arc::new(TcpOutboundTransport::new()),
+    //     Arc::new(VisionTlsOutboundSecurity::new_with_mozilla_and_default_padding(
+    //         "local.caughtwind.top".try_into().unwrap(),
+    //         id
+    //     )),
+    //     Arc::new(NoneNetwork)
+    // );
 
-    let outbound = Arc::new(VlessOutbound::new(
-        Arc::new(pipeline),
-        "127.0.0.1:1082".parse().unwrap(),
-        id
-    ));
+    // let outbound = Arc::new(VlessOutbound::new(
+    //     Arc::new(pipeline),
+    //     "127.0.0.1:1082".parse().unwrap(),
+    //     id
+    // ));
 
-    let dispatcher = Arc::new(SimpleDispatcher::new(outbound));
+    // let dispatcher = Arc::new(SimpleDispatcher::new(outbound));
 
-    let inbound = Socks5Inbound::bind("127.0.0.1:1083".parse().unwrap()).await?;
-    tracing::info!("`{}` is listening on `127.0.0.1:1083`", inbound.name());
+    // let inbound = Socks5Inbound::bind("127.0.0.1:1083".parse().unwrap()).await?;
+    // tracing::info!("`{}` is listening on `127.0.0.1:1083`", inbound.name());
 
-    handles.push(tokio::spawn(async move {
-        if let Err(e) = inbound.incoming(dispatcher).await {
-            tracing::error!("`{}` failed to accept: {}", inbound.name(), e);
-        }
-    }));
+    // handles.push(tokio::spawn(async move {
+    //     if let Err(e) = inbound.incoming(dispatcher).await {
+    //         tracing::error!("`{}` failed to accept: {}", inbound.name(), e);
+    //     }
+    // }));
 
     for h in handles {
         let _ = h.await;

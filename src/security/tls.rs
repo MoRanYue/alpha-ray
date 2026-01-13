@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use rustls::pki_types::ServerName;
-use rustls::{ClientConfig, ClientConnection, Connection, RootCertStore};
+use rustls::{ClientConfig, ClientConnection, Connection, RootCertStore, ServerConfig, ServerConnection};
 use crate::protocol::tls::TlsStream;
+use crate::security::StreamInboundSecurity;
 use crate::{AsyncStream, TargetAddr};
 use super::StreamOutboundSecurity;
 
@@ -43,5 +44,31 @@ impl StreamOutboundSecurity for TlsOutboundSecurity {
 
     fn name(&self) -> &str {
         "TlsOutboundSecurity"
+    }
+}
+
+pub struct TlsInboundSecurity {
+    config: Arc<ServerConfig>
+}
+
+impl TlsInboundSecurity {
+    pub fn new(config: Arc<ServerConfig>) -> Self {
+        Self {
+            config
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl StreamInboundSecurity for TlsInboundSecurity {
+    async fn accept(&self, stream: Box<dyn AsyncStream>) -> crate::Result<Box<dyn AsyncStream>> {
+        let conn = ServerConnection::new(self.config.clone())?;
+        let s = Box::new(TlsStream::new(stream, Connection::Server(conn)));
+
+        Ok(s)
+    }
+
+    fn name(&self) -> &str {
+        "TlsInboundSecurity"
     }
 }

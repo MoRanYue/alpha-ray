@@ -125,6 +125,7 @@ fn setup_logger() {
         .with(
             tracing_subscriber::fmt::layer()
                 .with_timer(timer)
+                .with_target(true)
         )
         .init();
 }

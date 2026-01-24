@@ -1,6 +1,7 @@
 use fast_socks5::server::Socks5ServerProtocol;
 use fast_socks5::{ReplyError, Socks5Command, SocksError};
 use tokio::sync::Mutex;
+use tracing::Instrument;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -92,16 +93,23 @@ async fn handle_socks5_stream(stream: TcpStream, dispatcher: Arc<dyn Dispatcher>
 #[async_trait::async_trait]
 impl Inbound for Socks5Inbound {
     async fn incoming(&self, dispatcher: Arc<dyn Dispatcher>) -> crate::Result<()> {
-        loop {
-            let (stream, _) = self.listener.accept().await?;
+        let span = self.span();
+        async move {
+            loop {
+                let (stream, peer_addr) = self.listener.accept().await?;
 
-            let dispatcher = dispatcher.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_socks5_stream(stream, dispatcher).await {
-                    tracing::error!("Stream handling error: {}", e);
-                }
-            });
+                let stream_span = tracing::info_span!("stream", peer = ?peer_addr);
+
+                let dispatcher = dispatcher.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = handle_socks5_stream(stream, dispatcher).await {
+                        tracing::error!("Stream handling error: {}", e);
+                    }
+                }.instrument(stream_span));
+            }
         }
+            .instrument(span)
+            .await
     }
 
     fn name(&self) -> &str {

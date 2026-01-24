@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use tracing::Instrument;
 use uuid::Uuid;
 use crate::error::{AlphaRayError, VlessError};
 use crate::pipeline::StreamInboundPipeline;
@@ -76,17 +77,24 @@ async fn handle_vless_stream(mut stream: Box<dyn AsyncStream>, id: Uuid, dispatc
 #[async_trait::async_trait]
 impl Inbound for VlessInbound {
     async fn incoming(&self, dispatcher: Arc<dyn Dispatcher>) -> crate::Result<()> {
-        loop {
-            let stream = self.inner.accept().await?;
+        let span = self.span();
+        async move {
+            loop {
+                let (stream, peer_addr) = self.inner.accept().await?;
 
-            let dispatcher = dispatcher.clone();
-            let id = self.id;
-            tokio::spawn(async move {
-                if let Err(e) = handle_vless_stream(stream, id, dispatcher).await {
-                    tracing::error!("Stream handling error: {}", e);
-                }
-            });
+                let stream_span = tracing::info_span!("stream", peer = ?peer_addr);
+
+                let dispatcher = dispatcher.clone();
+                let id = self.id;
+                tokio::spawn(async move {
+                    if let Err(e) = handle_vless_stream(stream, id, dispatcher).await {
+                        tracing::error!("Stream handling error: {}", e);
+                    }
+                }.instrument(stream_span));
+            }
         }
+            .instrument(span)
+            .await
     }
 
     fn name(&self) -> &str {

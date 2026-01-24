@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use uuid::Uuid;
+use tracing::Instrument;
 use crate::transport::tcp::TcpOutboundTransport;
 use crate::security::none::NoneSecurity;
 use crate::network::none::NoneNetwork;
@@ -41,19 +42,26 @@ impl VlessOutbound {
 #[async_trait::async_trait]
 impl Outbound for VlessOutbound {
     async fn connect(&self, target: TargetAddr) -> crate::Result<Box<dyn AsyncStream>> {
-        let server_target = TargetAddr::SocketAddr(self.server_addr);
-        let stream = self.inner.connect(server_target).await?;
+        let span = self.span();
+        async move {
+            tracing::info!("Connecting to target: {:?}", target);
+            
+            let server_target = TargetAddr::SocketAddr(self.server_addr);
+            let stream = self.inner.connect(server_target).await?;
 
-        let req = VlessRequest::new(
-            VlessVersion::Zero,
-            self.uuid,
-            VlessCommand::Tcp,
-            target
-        );
-        let mut stream = VlessStream::new(stream);
-        stream.connect(req).await?;
-        
-        Ok(Box::new(stream))
+            let req = VlessRequest::new(
+                VlessVersion::Zero,
+                self.uuid,
+                VlessCommand::Tcp,
+                target
+            );
+            let mut stream = VlessStream::new(stream);
+            stream.connect(req).await?;
+            
+            Ok(Box::new(stream) as Box<dyn AsyncStream>)
+        }
+            .instrument(span)
+            .await
     }
 
     fn name(&self) -> &str {

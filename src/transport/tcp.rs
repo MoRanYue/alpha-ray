@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
+use tracing::Instrument;
 use crate::error::AlphaRayError;
 use crate::{AsyncStream, TargetAddr};
 use super::{StreamOutboundTransport, StreamInboundTransport};
@@ -25,30 +26,37 @@ impl TcpOutboundTransport {
 #[async_trait::async_trait]
 impl StreamOutboundTransport for TcpOutboundTransport {
     async fn connect(&self, target: TargetAddr) -> crate::Result<Box<dyn AsyncStream>> {
-        let addrs = match target {
-            TargetAddr::SocketAddr(a) => vec![a],
-            TargetAddr::Domain(h, p) => {
-                tokio::net::lookup_host((h.as_str(), p)).await?.collect()
-            }
-        };
-
-        for addr in addrs {
-            match tokio::time::timeout(self.timeout, TcpStream::connect(addr)).await {
-                Ok(Ok(s)) => {
-                    s.set_nodelay(true).ok();
-
-                    return Ok(Box::new(s));
+        let span = self.span();
+        async move {
+            tracing::info!("Connecting to `{}`", target);
+            
+            let addrs = match target {
+                TargetAddr::SocketAddr(a) => vec![a],
+                TargetAddr::Domain(h, p) => {
+                    tokio::net::lookup_host((h.as_str(), p)).await?.collect()
                 }
-                Ok(Err(e)) => {
-                    tracing::error!("Failed to connect to `{}`: {}", addr, e);
-                },
-                Err(_) => {
-                    tracing::error!("Connection to `{}` has timed out", addr)
+            };
+
+            for addr in addrs {
+                match tokio::time::timeout(self.timeout, TcpStream::connect(addr)).await {
+                    Ok(Ok(s)) => {
+                        s.set_nodelay(true).ok();
+
+                        return Ok(Box::new(s) as Box<dyn AsyncStream>);
+                    }
+                    Ok(Err(e)) => {
+                        tracing::error!("Failed to connect to `{}`: {}", addr, e);
+                    },
+                    Err(_) => {
+                        tracing::error!("Connection to `{}` has timed out", addr)
+                    }
                 }
             }
+
+            Err(AlphaRayError::Connection)
         }
-
-        Err(AlphaRayError::Connection)
+            .instrument(span)
+            .await
     }
 
     fn name(&self) -> &str {
@@ -70,10 +78,16 @@ impl TcpInboundTransport {
 
 #[async_trait::async_trait]
 impl StreamInboundTransport for TcpInboundTransport {
-    async fn accept(&self) -> crate::Result<Box<dyn AsyncStream>> {
-        let (s, _) = self.listener.accept().await?;
+    async fn accept(&self) -> crate::Result<(Box<dyn AsyncStream>, SocketAddr)> {
+        let span = self.span();
+        async move {
+            let (s, p) = self.listener.accept().await?;
+            tracing::debug!("Accepted connection from `{}`", p);
 
-        Ok(Box::new(s))
+            Ok((Box::new(s) as Box<dyn AsyncStream>, p))
+        }
+            .instrument(span)
+            .await
     }
 
     fn name(&self) -> &str {

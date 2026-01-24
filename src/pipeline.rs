@@ -1,5 +1,6 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
-use crate::{AsyncStream, TargetAddr, security};
+use crate::{AsyncStream, TargetAddr};
 use crate::transport::{StreamInboundTransport, StreamOutboundTransport};
 use crate::security::{StreamInboundSecurity, StreamOutboundSecurity};
 use crate::network::{StreamInboundNetwork, StreamOutboundNetwork};
@@ -31,12 +32,12 @@ impl StreamInboundPipeline {
         }
     }
 
-    pub async fn accept(&self) -> crate::Result<Box<dyn AsyncStream>> {
-        let mut stream = self.transport.accept().await?;
+    pub async fn accept(&self) -> crate::Result<(Box<dyn AsyncStream>, SocketAddr)> {
+        let (mut stream, peer_addr) = self.transport.accept().await?;
         stream = self.security.accept(stream).await?;
         stream = self.network.accept(stream).await?;
 
-        Ok(stream)
+        Ok((stream, peer_addr))
     }
 
     pub fn name(&self) -> &str {

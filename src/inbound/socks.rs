@@ -98,7 +98,7 @@ impl Inbound for Socks5Inbound {
             loop {
                 let (stream, peer_addr) = self.listener.accept().await?;
 
-                let stream_span = tracing::info_span!("stream", peer = ?peer_addr);
+                let stream_span = tracing::info_span!("stream", peer = %peer_addr);
 
                 let dispatcher = dispatcher.clone();
                 tokio::spawn(async move {

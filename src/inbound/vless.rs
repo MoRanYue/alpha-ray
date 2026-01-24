@@ -82,7 +82,7 @@ impl Inbound for VlessInbound {
             loop {
                 let (stream, peer_addr) = self.inner.accept().await?;
 
-                let stream_span = tracing::info_span!("stream", peer = ?peer_addr);
+                let stream_span = tracing::info_span!("stream", peer = %peer_addr);
 
                 let dispatcher = dispatcher.clone();
                 let id = self.id;

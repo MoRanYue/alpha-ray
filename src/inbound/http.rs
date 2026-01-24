@@ -67,10 +67,9 @@ impl Inbound for HttpInbound {
         let span = self.span();
         async move {
             loop {
-                let (stream, _) = self.listener.accept().await?;
-                let peer_addr = stream.peer_addr().unwrap();
+                let (stream, peer_addr) = self.listener.accept().await?;
 
-                let stream_span = tracing::info_span!("stream", peer = ?stream.peer_addr());
+                let stream_span = tracing::info_span!("stream", peer = %peer_addr);
                 let io = TokioIo::new(stream);
                 let dispatcher = dispatcher.clone();
                 tokio::spawn(async move {
